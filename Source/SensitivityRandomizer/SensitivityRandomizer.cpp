@@ -10,8 +10,10 @@
 #include <time.h>
 #include <fstream>
 #include <windows.h>
-#include <armadillo>
 #include <conio.h>
+
+#define ARMA_USE_BLAS
+#include <armadillo>
 
 #pragma warning(disable : 4996)
 
@@ -254,7 +256,7 @@ auto smooth(vector<double>&x_vals, vector<double>&y_vals)
 
 	// Convolve linearly connected y values with gaussian
 	// "Smoothing" effect here
-	vec smooth_curve = conv(yy, w / sum(w), "same");
+	auto smooth_curve = conv(yy, w / sum(w), "same");
 
 	// Convert back to std::vector to be used in Interception
 	vector<double> timesteps = conv_to < vector<double> >::from(xx);
