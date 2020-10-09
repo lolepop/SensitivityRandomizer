@@ -44,6 +44,60 @@ bool
 COORD coord;
 HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
 
+// intentionally made for local (in window) detection so it doesn't trigger while typing
+bool isKeyDown(int key)
+{
+	HANDLE handle;
+	if ((handle = GetStdHandle(STD_INPUT_HANDLE)) == NULL)
+		return false;
+
+	DWORD num;
+	INPUT_RECORD msg;
+	if (ReadConsoleInput(handle, &msg, 1, &num) == 0 || num < 1)
+		return false;
+
+	if (msg.EventType == KEY_EVENT && ((KEY_EVENT_RECORD&)msg.Event).bKeyDown)
+		return ((KEY_EVENT_RECORD&)msg.Event).wVirtualKeyCode == key;
+
+	return false;
+}
+
+void handleKeypress(const bool& running, bool& paused)
+{
+	bool debounce = true;
+
+	while (running)
+	{
+		if (isKeyDown(0x50))
+		{
+			if (debounce)
+				paused = !paused;
+			debounce = false;
+
+			coord.X = 36;
+			coord.Y = 19;
+			SetConsoleCursorPosition(hConsole, coord);
+
+			if (paused)
+			{
+				SetConsoleTextAttribute(hConsole, 0x3f);
+				std::printf(" PAUSED ");
+				SetConsoleTextAttribute(hConsole, 0x08);
+			}
+			else
+			{
+				std::printf("        ");
+				SetConsoleTextAttribute(hConsole, 0x08);
+			}
+
+		}
+		else
+		{
+			debounce = true;
+		}
+	}
+}
+
 void setUp()
 {
 	CONSOLE_FONT_INFOEX cfi;
@@ -309,7 +363,8 @@ int main()
 	context = interception_create_context();
 
 	interception_set_filter(context, interception_is_mouse, INTERCEPTION_FILTER_MOUSE_MOVE);
-	interception_set_filter(context, interception_is_keyboard, INTERCEPTION_FILTER_KEY_DOWN | INTERCEPTION_FILTER_KEY_UP);
+	// why use a driver that locks the keyboard if all you're just gonna use it for a single key with passthrough?
+	//interception_set_filter(context, interception_is_keyboard, INTERCEPTION_FILTER_KEY_DOWN | INTERCEPTION_FILTER_KEY_UP);
 
 	int i = 1;
 
@@ -342,11 +397,15 @@ int main()
 
 	sens_multiplier = final_y.front();
 
-	static double percent;
-	static bool paused = false;
-	static DWORD lastpress = 0;
+	double percent;
+	bool paused = false;
+	bool running = true;
 
 	if (DEBUG == 0) { std::printf("\nRunning...\n"); }
+
+	std::thread([&] {
+		handleKeypress(running, paused); // change to non thread blocking (PeekConsoleInput) if any race conditions during io
+	}).detach();
 
 	while (interception_receive(context, device = interception_wait(context), &stroke, 1) > 0)
 	{
@@ -394,7 +453,11 @@ int main()
 						}
 					}
 				}
-				else { break; }
+				else
+				{
+					running = false;
+					break;
+				}
 
 				dx = mstroke.x * sens_multiplier + carryX;
 				dy = mstroke.y * sens_multiplier + carryY;
@@ -410,33 +473,6 @@ int main()
 
 			interception_send(context, device, &stroke, 1);
 			curr_time = Time::now();
-		}
-
-		if (interception_is_keyboard(device))
-		{
-			InterceptionKeyStroke& kstroke = *(InterceptionKeyStroke*)& stroke;
-			interception_send(context, device, &stroke, 1);
-			if (kstroke.code == 0x19 && (GetTickCount64() - lastpress > 250)) 
-			{
-				lastpress = GetTickCount64();
-				paused = !paused;
-			}
-
-			coord.X = 36;
-			coord.Y = 19;
-			SetConsoleCursorPosition(hConsole, coord);
-
-			if (paused)
-			{
-				SetConsoleTextAttribute(hConsole, 0x3f);
-				std::printf(" PAUSED ");
-				SetConsoleTextAttribute(hConsole, 0x08);
-			}
-			else
-			{
-				std::printf("        ");
-				SetConsoleTextAttribute(hConsole, 0x08);
-			}
 		}
 	}
 
