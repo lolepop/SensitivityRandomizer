@@ -22,3 +22,42 @@ jobs:
         with:
           name: build
           path: Source/SensitivityRandomizer/Release/out
+  
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: create release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ github.ref }}
+          draft: false
+          prerelease: false
+          allowUpdates: true
+      
+      - name: Download artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build
+      
+      - run: ls
+      
+      - uses: montudor/action-zip@v0.1.0
+        with:
+          args: zip -r release.zip .
+
+      - name: upload release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./Release.zip
+          asset_name: Release.zip
+          asset_content_type: application/zip
