@@ -151,11 +151,11 @@ copy $(ProjectDir)Libraries\OpenBLAS\bin\*.dll $(OutDir)</Command>
     </Link>
     <PostBuildEvent>
       <Command>mkdir $(OutDir)out
-move /Y $(OutDir)*.exe $(OutDir)out
-copy $(ProjectDir)resources\*.* $(OutDir)out
-copy $(ProjectDir)Libraries\x86\*.dll $(OutDir)out
-copy $(ProjectDir)Libraries\OpenBLAS\bin\*.dll $(OutDir)out
-copy $(ProjectDir)..\..\Driver\*.* $(OutDir)out</Command>
+move /Y "$(OutDir)*.exe" "$(OutDir)out"
+copy "$(ProjectDir)resources\*.*" "$(OutDir)out"
+copy "$(ProjectDir)Libraries\x86\*.dll" "$(OutDir)out"
+copy "$(ProjectDir)Libraries\OpenBLAS\bin\*.dll" "$(OutDir)out"
+copy "$(ProjectDir)..\..\Driver\*.*" "$(OutDir)out"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
