@@ -39,6 +39,7 @@ jobs:
           release_name: ${{ github.ref }}
           draft: false
           prerelease: false
+          allowUpdates: true
       
       - name: Download artifact
         uses: actions/download-artifact@v2
