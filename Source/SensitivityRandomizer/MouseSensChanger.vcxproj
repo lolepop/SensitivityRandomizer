@@ -105,7 +105,7 @@
       <UseLibraryDependencyInputs>true</UseLibraryDependencyInputs>
     </ProjectReference>
     <PostBuildEvent>
-      <Command>copy /Y $(ProjectDir)resources\*.* $(OutDir)
+      <Command>copy $(ProjectDir)resources\*.* $(OutDir)
 copy $(ProjectDir)Libraries\x86\*.dll $(OutDir)
 copy $(ProjectDir)Libraries\OpenBLAS\bin\*.dll $(OutDir)</Command>
     </PostBuildEvent>
@@ -150,9 +150,12 @@ copy $(ProjectDir)Libraries\OpenBLAS\bin\*.dll $(OutDir)</Command>
       <AdditionalDependencies>libopenblas.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>copy /Y $(ProjectDir)resources\*.* $(OutDir)
-copy $(ProjectDir)Libraries\x86\*.dll $(OutDir)
-copy $(ProjectDir)Libraries\OpenBLAS\bin\*.dll $(OutDir)</Command>
+      <Command>mkdir $(OutDir)out
+move /Y $(OutDir)*.exe $(OutDir)out
+copy $(ProjectDir)resources\*.* $(OutDir)out
+copy $(ProjectDir)Libraries\x86\*.dll $(OutDir)out
+copy $(ProjectDir)Libraries\OpenBLAS\bin\*.dll $(OutDir)out
+copy $(ProjectDir)..\..\Driver\*.* $(OutDir)out</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
