@@ -11,6 +11,7 @@
 #include <fstream>
 #include <windows.h>
 #include <conio.h>
+#include <mutex>
 
 #define ARMA_USE_BLAS
 #include <armadillo>
@@ -19,6 +20,11 @@
 
 using namespace std;
 using namespace arma;
+
+typedef chrono::high_resolution_clock Time;
+typedef chrono::duration<float> fsec;
+
+std::mutex mtx;
 
 int
 	RUNTIME = 30, // Set how long program will run for (without manual termination) in minutes- Default = 30 mins
@@ -76,6 +82,8 @@ void handleKeypress(const bool& running, bool& paused)
 
 			coord.X = 36;
 			coord.Y = 19;
+
+			mtx.lock();
 			SetConsoleCursorPosition(hConsole, coord);
 
 			if (paused)
@@ -89,6 +97,7 @@ void handleKeypress(const bool& running, bool& paused)
 				std::printf("        ");
 				SetConsoleTextAttribute(hConsole, 0x08);
 			}
+			mtx.unlock();
 
 		}
 		else
@@ -96,6 +105,101 @@ void handleKeypress(const bool& running, bool& paused)
 			debounce = true;
 		}
 	}
+}
+
+void handleInterception(bool& running, const bool& paused, const InterceptionContext& context, const vector<double>& final_x, const vector<double>& final_y)
+{
+	InterceptionDevice device;
+	InterceptionStroke stroke;
+
+	double
+		dx,
+		dy,
+		passage,
+		carryX = 0,
+		carryY = 0,
+		time = 0;
+
+	double sens_multiplier = final_y.front();
+	int size = final_x.size();
+
+	double percent = 0;
+	auto prev_time = Time::now();
+	auto curr_time = Time::now();
+
+	int i = 1;
+	
+	while (interception_receive(context, device = interception_wait(context), &stroke, 1) > 0)
+	{
+		if (interception_is_mouse(device))
+		{
+			InterceptionMouseStroke& mstroke = *(InterceptionMouseStroke*)&stroke;
+			if (!(mstroke.flags & INTERCEPTION_MOUSE_MOVE_ABSOLUTE)) {
+
+				coord.X = 0;
+				coord.Y = 20;
+
+				fsec fs = curr_time - prev_time;
+				passage = fs.count();
+
+				if (i < size)
+				{
+					if (passage > final_x[i] - final_x[i - 1])
+					{
+						if (!paused)
+						{
+							int old_i = i - 1;
+							while (passage > final_x[i] - final_x[old_i]) { i++; }
+
+							sens_multiplier = final_y[i];
+							percent = double(i) / size * 100;
+							prev_time = Time::now();
+							i++;
+						}
+
+						if (DEBUG == 1 && mtx.try_lock())
+						{
+							SetConsoleCursorPosition(hConsole, coord);
+							SetConsoleTextAttribute(hConsole, 0x08);
+							std::printf("\nCurrent Sensitivity Multiplier: ");
+
+							SetConsoleTextAttribute(hConsole, 0xe0);
+							std::printf("%.5f\n", sens_multiplier);
+							SetConsoleTextAttribute(hConsole, 0x08);
+
+							std::printf("Program Termination: ");
+
+							SetConsoleTextAttribute(hConsole, 0xe0);
+							std::printf("%.3f%%\n\n", percent);
+							SetConsoleTextAttribute(hConsole, 0x08);
+							
+							mtx.unlock();
+						}
+					}
+				}
+				else
+				{
+					running = false;
+					break;
+				}
+
+				dx = mstroke.x * sens_multiplier + carryX;
+				dy = mstroke.y * sens_multiplier + carryY;
+
+				carryX = dx - floor(dx);
+				carryY = dy - floor(dy);
+
+				mstroke.x = (int)floor(dx);
+				mstroke.y = (int)floor(dy);
+
+				time += passage;
+			}
+
+			interception_send(context, device, &stroke, 1);
+			curr_time = Time::now();
+		}
+	}
+
 }
 
 void setUp()
@@ -351,8 +455,6 @@ auto visualize(vector<double>& t, vector<double>& s)
 int main()
 {
 	InterceptionContext context;
-	InterceptionDevice device;
-	InterceptionStroke stroke;
 
 	DWORD prev_mode;
 	GetConsoleMode(hConsole, &prev_mode);
@@ -366,17 +468,6 @@ int main()
 	// why use a driver that locks the keyboard if all you're just gonna use it for a single key with passthrough?
 	//interception_set_filter(context, interception_is_keyboard, INTERCEPTION_FILTER_KEY_DOWN | INTERCEPTION_FILTER_KEY_UP);
 
-	int i = 1;
-
-	double
-		dx,
-		dy,
-		passage,
-		sens_multiplier,
-		carryX = 0,
-		carryY = 0,
-		time = 0;
-
 	vector<double>
 		final_x,
 		final_y;
@@ -387,94 +478,21 @@ int main()
 
 	if (VISUALIZE) { visualize(final_x, final_y); }
 
-	int size = final_x.size();
-
-	typedef chrono::high_resolution_clock Time;
-	typedef chrono::duration<float> fsec;
-
-	auto prev_time = Time::now();
-	auto curr_time = Time::now();
-
-	sens_multiplier = final_y.front();
-
-	double percent;
 	bool paused = false;
 	bool running = true;
 
 	if (DEBUG == 0) { std::printf("\nRunning...\n"); }
 
-	std::thread([&] {
-		handleKeypress(running, paused); // change to non thread blocking (PeekConsoleInput) if any race conditions during io
-	}).detach();
+	std::thread keypress([&] {
+		handleKeypress(running, paused);
+	});
 
-	while (interception_receive(context, device = interception_wait(context), &stroke, 1) > 0)
-	{
-		if (interception_is_mouse(device))
-		{
-			InterceptionMouseStroke& mstroke = *(InterceptionMouseStroke*)& stroke;
-			if (!(mstroke.flags & INTERCEPTION_MOUSE_MOVE_ABSOLUTE)) {
+	std::thread interception([&] {
+		handleInterception(running, paused, context, final_x, final_y);
+	});
 
-				coord.X = 0;
-				coord.Y = 20;
-
-				fsec fs = curr_time - prev_time;
-				passage = fs.count();
-
-				if (i < size)
-				{
-					if (passage > final_x[i] - final_x[i-1])
-					{
-						if (!paused) 
-						{
-							int old_i = i - 1;
-							while (passage > final_x[i] - final_x[old_i]){ i++; }
-
-							sens_multiplier = final_y[i];
-							percent = double(i) / size * 100;
-							prev_time = Time::now();
-							i++;
-						}
-
-						if (DEBUG == 1)
-						{
-							SetConsoleCursorPosition(hConsole, coord);
-							SetConsoleTextAttribute(hConsole, 0x08);
-							std::printf("\nCurrent Sensitivity Multiplier: ");
-
-							SetConsoleTextAttribute(hConsole, 0xe0);
-							std::printf("%.5f\n", sens_multiplier);
-							SetConsoleTextAttribute(hConsole, 0x08);
-
-							std::printf("Program Termination: ");
-
-							SetConsoleTextAttribute(hConsole, 0xe0);
-							std::printf("%.3f%%\n\n", percent);
-							SetConsoleTextAttribute(hConsole, 0x08);
-						}
-					}
-				}
-				else
-				{
-					running = false;
-					break;
-				}
-
-				dx = mstroke.x * sens_multiplier + carryX;
-				dy = mstroke.y * sens_multiplier + carryY;
-
-				carryX = dx - floor(dx);
-				carryY = dy - floor(dy);
-
-				mstroke.x = (int)floor(dx);
-				mstroke.y = (int)floor(dy);
-
-				time += passage;
-			}
-
-			interception_send(context, device, &stroke, 1);
-			curr_time = Time::now();
-		}
-	}
+	keypress.join();
+	interception.join();
 
 	SetConsoleTextAttribute(hConsole, 0x02);
 	std::printf("\n\n\n\n\nPlease restart the program to regenerate another smooth sensitivity curve.\n\n");
