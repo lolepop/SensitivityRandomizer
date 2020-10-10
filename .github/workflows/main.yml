@@ -50,7 +50,7 @@ jobs:
       
       - uses: montudor/action-zip@v0.1.0
         with:
-          args: zip -r release.zip .
+          args: zip -r Release.zip .
 
       - name: upload release
         uses: actions/upload-release-asset@v1
